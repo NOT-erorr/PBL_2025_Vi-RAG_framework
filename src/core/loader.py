@@ -9,6 +9,11 @@ try:
 except ImportError:
     PyPDF2 = None
 
+try:
+    from docx import Document as DocxDocument
+except ImportError:
+    DocxDocument = None
+
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -759,8 +764,8 @@ class TXTLoader(DocumentLoader):
         self.auto_detect_encoding = auto_detect_encoding
         
         # Validate TXT file
-        if self.file_path.suffix.lower() not in ['.txt', '.text']:
-            logger.warning(f"File extension is not .txt: {file_path}")
+        if self.file_path.suffix.lower() not in ['.txt', '.text', '.docx']:
+            logger.warning(f"File extension is not .txt or .docx: {file_path}")
     
     def _detect_encoding(self) -> str:
         """
@@ -790,75 +795,185 @@ class TXTLoader(DocumentLoader):
     
     def load(self) -> List[Document]:
         """
-        Load nội dung từ file TXT với error handling
+        Load nội dung từ file TXT hoặc DOCX với error handling
         
         Returns:
-            List[Document]: Danh sách documents (1 document cho toàn bộ file)
+            List[Document]: Danh sách documents (mỗi page là 1 document)
         """
-        text = None
-        used_encoding = self.encoding
-        
         try:
-            # Try with specified encoding
-            try:
-                with open(self.file_path, 'r', encoding=self.encoding) as file:
-                    text = file.read()
-                logger.info(f"Successfully loaded file with {self.encoding} encoding")
+            # Determine file type and load content
+            file_type = self.file_path.suffix.lower()
+            pages = []
+            used_encoding = None
+            
+            # Load DOCX file
+            if file_type == '.docx':
+                if DocxDocument is None:
+                    raise ImportError(
+                        "python-docx is required to load DOCX files. "
+                        "Install with: pip install python-docx"
+                    )
                 
-            except UnicodeDecodeError as e:
-                if self.auto_detect_encoding:
-                    logger.warning(f"Failed to decode with {self.encoding}: {e}")
-                    logger.info("Attempting to auto-detect encoding...")
+                doc = DocxDocument(str(self.file_path))
+                
+                # Group paragraphs by page breaks
+                current_page = []
+                
+                for para in doc.paragraphs:
+                    text = para.text.strip()
                     
-                    detected_encoding = self._detect_encoding()
+                    # Check for page break
+                    if para.runs:
+                        for run in para.runs:
+                            if '\f' in run.text or '\x0c' in run.text:
+                                # Save current page and start new one
+                                if current_page:
+                                    pages.append('\n'.join(current_page))
+                                    current_page = []
+                                break
                     
-                    if detected_encoding and detected_encoding != self.encoding:
-                        try:
-                            with open(self.file_path, 'r', encoding=detected_encoding) as file:
-                                text = file.read()
-                            used_encoding = detected_encoding
-                            logger.info(f"Successfully loaded with detected encoding: {detected_encoding}")
-                        except Exception as e2:
-                            logger.error(f"Failed with detected encoding: {e2}")
+                    if text:
+                        current_page.append(text)
+                
+                # Add last page
+                if current_page:
+                    pages.append('\n'.join(current_page))
+                
+                # If no explicit page breaks, split by character count
+                if len(pages) == 1 and len(pages[0]) > 3000:
+                    pages = self._split_into_pages(pages[0])
+                
+                file_type_str = 'docx'
+                
+            # Load TXT file
+            else:
+                text = None
+                used_encoding = self.encoding
+                
+                # Try with specified encoding
+                try:
+                    with open(self.file_path, 'r', encoding=self.encoding) as file:
+                        text = file.read()
+                    logger.info(f"Successfully loaded file with {self.encoding} encoding")
+                    
+                except UnicodeDecodeError as e:
+                    if self.auto_detect_encoding:
+                        logger.warning(f"Failed to decode with {self.encoding}: {e}")
+                        logger.info("Attempting to auto-detect encoding...")
+                        
+                        detected_encoding = self._detect_encoding()
+                        
+                        if detected_encoding and detected_encoding != self.encoding:
+                            try:
+                                with open(self.file_path, 'r', encoding=detected_encoding) as file:
+                                    text = file.read()
+                                used_encoding = detected_encoding
+                                logger.info(f"Successfully loaded with detected encoding: {detected_encoding}")
+                            except Exception as e2:
+                                logger.error(f"Failed with detected encoding: {e2}")
+                                raise
+                        else:
                             raise
                     else:
                         raise
-                else:
-                    raise
+                
+                if text is None:
+                    raise ValueError(f"Failed to load text from {self.file_path}")
+                
+                # Check if file is empty
+                if not text.strip():
+                    logger.warning(f"File is empty: {self.file_path}")
+                    return []
+                
+                # Split text into pages
+                pages = self._split_into_pages(text)
+                file_type_str = 'txt'
             
-            if text is None:
-                raise ValueError(f"Failed to load text from {self.file_path}")
-            
-            # Check if file is empty
-            if not text.strip():
+            # Check if content is empty
+            if not pages:
                 logger.warning(f"File is empty: {self.file_path}")
                 return []
             
-            # Apply preprocessing
-            processed_text = self._preprocess_text(text)
+            # Create documents from pages
+            documents = []
+            for page_num, page_text in enumerate(pages, start=1):
+                # Apply preprocessing
+                processed_text = self._preprocess_text(page_text)
+                
+                if not processed_text or not processed_text.strip():
+                    continue
+                
+                metadata = {
+                    'source': str(self.file_path),
+                    'file_type': file_type_str,
+                    'file_size': self.file_path.stat().st_size,
+                    'page': page_num,
+                    'total_pages': len(pages),
+                    'char_count': len(processed_text)
+                }
+                
+                # Add encoding info for TXT files
+                if used_encoding:
+                    metadata['encoding'] = used_encoding
+                
+                documents.append(Document(content=processed_text, metadata=metadata))
             
-            if not processed_text or not processed_text.strip():
-                logger.warning(f"File is empty after preprocessing: {self.file_path}")
-                return []
+            logger.info(f"Successfully loaded {file_type_str.upper()} file: {len(documents)} pages")
             
-            metadata = {
-                'source': str(self.file_path),
-                'encoding': used_encoding,
-                'file_type': 'txt',
-                'file_size': self.file_path.stat().st_size,
-                'char_count': len(processed_text)
-            }
-            
-            logger.info(f"Successfully loaded TXT file: {len(processed_text)} characters")
-            
-            return [Document(content=processed_text, metadata=metadata)]
+            return documents
             
         except FileNotFoundError:
             logger.error(f"File not found: {self.file_path}")
             raise
         except Exception as e:
-            logger.error(f"Error loading TXT file: {e}")
+            logger.error(f"Error loading file: {e}")
             raise
+    
+    def _split_into_pages(self, text: str, chars_per_page: int = 3000) -> List[str]:
+        """
+        Split text into pages based on form feed character or character count
+        
+        Args:
+            text: Input text
+            chars_per_page: Approximate characters per page
+            
+        Returns:
+            List[str]: List of page texts
+        """
+        # Check if text contains form feed character (page break)
+        if '\f' in text:
+            pages = text.split('\f')
+            return [page.strip() for page in pages if page.strip()]
+        
+        # Otherwise split by character count
+        pages = []
+        current_pos = 0
+        while current_pos < len(text):
+            end_pos = min(current_pos + chars_per_page, len(text))
+            
+            # Try to break at sentence or paragraph boundary
+            if end_pos < len(text):
+                # Look for paragraph break
+                para_break = text.rfind('\n\n', current_pos, end_pos)
+                if para_break > current_pos:
+                    end_pos = para_break
+                else:
+                    # Look for sentence break
+                    sentence_break = max(
+                        text.rfind('. ', current_pos, end_pos),
+                        text.rfind('! ', current_pos, end_pos),
+                        text.rfind('? ', current_pos, end_pos)
+                    )
+                    if sentence_break > current_pos:
+                        end_pos = sentence_break + 1
+            
+            page_text = text[current_pos:end_pos].strip()
+            if page_text:
+                pages.append(page_text)
+            
+            current_pos = end_pos
+        
+        return pages if pages else [text]
 
 
 class DirectoryLoader:
