@@ -1,0 +1,5 @@
+# ----venv-----
+venv/
+# ----Testmodel and modules----
+testing/
+Testmodel.ipynb

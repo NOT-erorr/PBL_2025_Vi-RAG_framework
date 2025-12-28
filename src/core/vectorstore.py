@@ -1,8 +1,13 @@
 from abc import ABC, abstractmethod
-from typing import List, Tuple, Optional, Dict, Any
+from typing import List, Tuple, Optional, Dict, Any, Union
 import numpy as np
 from pathlib import Path
 import pickle
+import logging
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 class VectorStore(ABC):
@@ -102,19 +107,38 @@ class FAISSVectorStore(VectorStore):
     
     def __init__(
         self,
-        dimension: int,
+        dimension: int = 768,
         index_type: str = "Flat",
         metric: str = "cosine",
-        normalize: bool = True
+        normalize: bool = True,
+        nlist: int = 100,
+        nprobe: int = 10,
+        hnsw_m: int = 32,
+        hnsw_ef_search: int = 64,
+        hnsw_ef_construction: int = 200,
+        use_gpu: bool = False,
+        gpu_id: int = 0
     ):
         """
-        Initialize FAISS Vector Store
+        Initialize FAISS Vector Store với flexible configuration
         
         Args:
-            dimension: Dimension của embeddings
-            index_type: Loại FAISS index ('Flat', 'IVF', 'HNSW')
+            dimension: Dimension của embeddings (default: 768 cho sentence-transformers)
+            index_type: Loại FAISS index:
+                - 'Flat': Exact search, best quality
+                - 'IVF': Inverted File Index, faster search
+                - 'HNSW': Hierarchical NSW, best speed/quality tradeoff
+                - 'IVF_PQ': IVF + Product Quantization, memory efficient
+                - 'LSH': Locality Sensitive Hashing
             metric: Distance metric ('cosine', 'l2', 'inner_product')
             normalize: Normalize vectors trước khi add (recommended cho cosine)
+            nlist: Số clusters cho IVF (default: 100)
+            nprobe: Số clusters để search trong IVF (default: 10)
+            hnsw_m: Số connections per layer cho HNSW (default: 32)
+            hnsw_ef_search: Search depth cho HNSW (default: 64)
+            hnsw_ef_construction: Construction depth cho HNSW (default: 200)
+            use_gpu: Sử dụng GPU nếu có (requires faiss-gpu)
+            gpu_id: GPU ID để sử dụng (default: 0)
         """
         try:
             import faiss
@@ -129,9 +153,20 @@ class FAISSVectorStore(VectorStore):
         self.index_type = index_type
         self.metric = metric
         self.normalize = normalize
+        self.nlist = nlist
+        self.nprobe = nprobe
+        self.hnsw_m = hnsw_m
+        self.hnsw_ef_search = hnsw_ef_search
+        self.hnsw_ef_construction = hnsw_ef_construction
+        self.use_gpu = use_gpu
+        self.gpu_id = gpu_id
         
         # Initialize FAISS index
         self.index = self._create_index()
+        
+        # Apply GPU if requested
+        if self.use_gpu:
+            self._move_to_gpu()
         
         # Storage cho texts và metadata
         self.texts: List[str] = []
@@ -139,35 +174,79 @@ class FAISSVectorStore(VectorStore):
         self.ids: List[str] = []
         self._id_to_index: Dict[str, int] = {}
         self._counter = 0
+        
+        logger.info(f"Initialized FAISS VectorStore: dim={dimension}, type={index_type}, metric={metric}")
     
     def _create_index(self):
-        """Tạo FAISS index theo config"""
-        if self.metric == "cosine" or self.metric == "inner_product":
-            # Cosine similarity = Inner product với normalized vectors
-            if self.index_type == "Flat":
+        """Tạo FAISS index theo config với nhiều options"""
+        # Determine base metric
+        use_inner_product = self.metric in ["cosine", "inner_product"]
+        
+        if self.index_type == "Flat":
+            # Exact search, best quality
+            if use_inner_product:
                 index = self.faiss.IndexFlatIP(self.dimension)
-            elif self.index_type == "IVF":
-                quantizer = self.faiss.IndexFlatIP(self.dimension)
-                index = self.faiss.IndexIVFFlat(quantizer, self.dimension, 100)
-            elif self.index_type == "HNSW":
-                index = self.faiss.IndexHNSWFlat(self.dimension, 32)
             else:
-                raise ValueError(f"Unsupported index_type: {self.index_type}")
-        
-        elif self.metric == "l2":
-            if self.index_type == "Flat":
                 index = self.faiss.IndexFlatL2(self.dimension)
-            elif self.index_type == "IVF":
-                quantizer = self.faiss.IndexFlatL2(self.dimension)
-                index = self.faiss.IndexIVFFlat(quantizer, self.dimension, 100)
-            elif self.index_type == "HNSW":
-                index = self.faiss.IndexHNSWFlat(self.dimension, 32)
-            else:
-                raise ValueError(f"Unsupported index_type: {self.index_type}")
-        else:
-            raise ValueError(f"Unsupported metric: {self.metric}")
         
+        elif self.index_type == "IVF":
+            # Inverted File Index
+            if use_inner_product:
+                quantizer = self.faiss.IndexFlatIP(self.dimension)
+                index = self.faiss.IndexIVFFlat(quantizer, self.dimension, self.nlist)
+            else:
+                quantizer = self.faiss.IndexFlatL2(self.dimension)
+                index = self.faiss.IndexIVFFlat(quantizer, self.dimension, self.nlist)
+            index.nprobe = self.nprobe
+        
+        elif self.index_type == "HNSW":
+            # Hierarchical Navigable Small World
+            index = self.faiss.IndexHNSWFlat(self.dimension, self.hnsw_m)
+            index.hnsw.efConstruction = self.hnsw_ef_construction
+            index.hnsw.efSearch = self.hnsw_ef_search
+        
+        elif self.index_type == "IVF_PQ":
+            # IVF + Product Quantization (memory efficient)
+            # Use 8 bytes per vector (very compressed)
+            m = 8  # Number of sub-quantizers
+            bits = 8  # Bits per sub-quantizer
+            
+            if use_inner_product:
+                quantizer = self.faiss.IndexFlatIP(self.dimension)
+                index = self.faiss.IndexIVFPQ(quantizer, self.dimension, self.nlist, m, bits)
+            else:
+                quantizer = self.faiss.IndexFlatL2(self.dimension)
+                index = self.faiss.IndexIVFPQ(quantizer, self.dimension, self.nlist, m, bits)
+            index.nprobe = self.nprobe
+        
+        elif self.index_type == "LSH":
+            # Locality Sensitive Hashing
+            nbits = self.dimension * 4  # Number of bits in hash
+            index = self.faiss.IndexLSH(self.dimension, nbits)
+        
+        else:
+            raise ValueError(
+                f"Unsupported index_type: {self.index_type}. "
+                f"Supported types: Flat, IVF, HNSW, IVF_PQ, LSH"
+            )
+        
+        logger.info(f"Created FAISS index: {self.index_type} with metric {self.metric}")
         return index
+    
+    def _move_to_gpu(self):
+        """Move FAISS index to GPU"""
+        try:
+            if not hasattr(self.faiss, 'StandardGpuResources'):
+                logger.warning("GPU not available. Install faiss-gpu for GPU support.")
+                self.use_gpu = False
+                return
+            
+            res = self.faiss.StandardGpuResources()
+            self.index = self.faiss.index_cpu_to_gpu(res, self.gpu_id, self.index)
+            logger.info(f"Moved FAISS index to GPU {self.gpu_id}")
+        except Exception as e:
+            logger.warning(f"Failed to move to GPU: {e}. Using CPU instead.")
+            self.use_gpu = False
     
     def _generate_id(self) -> str:
         """Generate unique ID"""
@@ -184,9 +263,10 @@ class FAISSVectorStore(VectorStore):
         texts: List[str],
         embeddings: List[List[float]],
         metadatas: Optional[List[Dict]] = None,
-        ids: Optional[List[str]] = None
+        ids: Optional[List[str]] = None,
+        batch_size: int = 1000
     ) -> List[str]:
-        """Thêm texts và embeddings vào FAISS index"""
+        """Thêm texts và embeddings vào FAISS index với batch processing"""
         if not texts:
             return []
         
@@ -210,27 +290,95 @@ class FAISSVectorStore(VectorStore):
         if self.normalize:
             vectors = self._normalize_vectors(vectors)
         
-        # Train index nếu là IVF và chưa được train
-        if self.index_type == "IVF" and not self.index.is_trained:
-            print("Training IVF index...")
-            self.index.train(vectors)
+        # Train index nếu cần
+        if self.index_type in ["IVF", "IVF_PQ"] and not self.index.is_trained:
+            logger.info(f"Training {self.index_type} index with {len(vectors)} vectors...")
+            # Use a sample for training if too many vectors
+            training_vectors = vectors if len(vectors) <= 100000 else vectors[:100000]
+            self.index.train(training_vectors)
+            logger.info("Index training completed")
         
-        # Lấy index hiện tại
-        start_idx = len(self.texts)
+        # Add vectors in batches
+        all_ids = []
+        for i in range(0, len(texts), batch_size):
+            batch_end = min(i + batch_size, len(texts))
+            
+            batch_vectors = vectors[i:batch_end]
+            batch_texts = texts[i:batch_end]
+            batch_metadatas = metadatas[i:batch_end]
+            batch_ids = ids[i:batch_end]
+            
+            # Lấy index hiện tại
+            start_idx = len(self.texts)
+            
+            # Add vectors to FAISS index
+            self.index.add(batch_vectors)
+            
+            # Store texts, metadata, và IDs
+            self.texts.extend(batch_texts)
+            self.metadatas.extend(batch_metadatas)
+            self.ids.extend(batch_ids)
+            
+            # Update ID mapping
+            for j, doc_id in enumerate(batch_ids):
+                self._id_to_index[doc_id] = start_idx + j
+            
+            all_ids.extend(batch_ids)
+            
+            if batch_end - i == batch_size:
+                logger.debug(f"Added batch {i//batch_size + 1}: {batch_end}/{len(texts)} vectors")
         
-        # Add vectors to FAISS index
-        self.index.add(vectors)
+        logger.info(f"Added {len(texts)} vectors to index. Total: {self.index.ntotal}")
+        return all_ids
+    
+    def add_documents(
+        self,
+        documents: List[Any],
+        embeddings: List[List[float]],
+        batch_size: int = 1000
+    ) -> List[str]:
+        """
+        Thêm documents từ loader.py (Document objects) vào vector store
         
-        # Store texts, metadata, và IDs
-        self.texts.extend(texts)
-        self.metadatas.extend(metadatas)
-        self.ids.extend(ids)
+        Args:
+            documents: List of Document objects from loader.py
+            embeddings: Embeddings tương ứng với documents
+            batch_size: Batch size cho processing
+            
+        Returns:
+            List[str]: IDs của documents đã thêm
+        """
+        if not documents:
+            return []
         
-        # Update ID mapping
-        for i, doc_id in enumerate(ids):
-            self._id_to_index[doc_id] = start_idx + i
+        if len(documents) != len(embeddings):
+            raise ValueError("Số lượng documents và embeddings phải bằng nhau")
         
-        return ids
+        # Extract texts và metadatas từ Document objects
+        texts = []
+        metadatas = []
+        
+        for doc in documents:
+            # Assume Document has .content và .metadata attributes
+            if hasattr(doc, 'content'):
+                texts.append(doc.content)
+            elif hasattr(doc, 'page_content'):
+                texts.append(doc.page_content)
+            else:
+                texts.append(str(doc))
+            
+            if hasattr(doc, 'metadata'):
+                metadatas.append(doc.metadata)
+            else:
+                metadatas.append({})
+        
+        logger.info(f"Adding {len(documents)} documents to vector store...")
+        return self.add_texts(
+            texts=texts,
+            embeddings=embeddings,
+            metadatas=metadatas,
+            batch_size=batch_size
+        )
     
     def similarity_search(
         self,
@@ -469,9 +617,183 @@ class FAISSVectorStore(VectorStore):
     def clear(self) -> None:
         """Xóa tất cả dữ liệu trong vector store"""
         self.index = self._create_index()
+        
+        # Apply GPU if needed
+        if self.use_gpu:
+            self._move_to_gpu()
+        
         self.texts = []
         self.metadatas = []
         self.ids = []
         self._id_to_index = {}
         self._counter = 0
-        print("Vector store cleared")
+        logger.info("Vector store cleared")
+    
+    def get_index_stats(self) -> Dict[str, Any]:
+        """
+        Lấy thông tin thống kê về index
+        
+        Returns:
+            Dict: Statistics về index
+        """
+        stats = {
+            "total_vectors": self.index.ntotal,
+            "dimension": self.dimension,
+            "index_type": self.index_type,
+            "metric": self.metric,
+            "normalize": self.normalize,
+            "is_trained": self.index.is_trained if hasattr(self.index, 'is_trained') else True,
+            "use_gpu": self.use_gpu
+        }
+        
+        # Add index-specific stats
+        if self.index_type == "IVF" or self.index_type == "IVF_PQ":
+            stats["nlist"] = self.nlist
+            stats["nprobe"] = self.nprobe
+        elif self.index_type == "HNSW":
+            stats["hnsw_m"] = self.hnsw_m
+            stats["hnsw_ef_search"] = self.hnsw_ef_search
+        
+        return stats
+    
+    def update_search_params(self, **kwargs):
+        """
+        Update search parameters dynamically
+        
+        Args:
+            **kwargs: Parameters to update (e.g., nprobe, efSearch)
+        """
+        if "nprobe" in kwargs and hasattr(self.index, "nprobe"):
+            self.index.nprobe = kwargs["nprobe"]
+            self.nprobe = kwargs["nprobe"]
+            logger.info(f"Updated nprobe to {kwargs['nprobe']}")
+        
+        if "efSearch" in kwargs and hasattr(self.index, "hnsw"):
+            self.index.hnsw.efSearch = kwargs["efSearch"]
+            self.hnsw_ef_search = kwargs["efSearch"]
+            logger.info(f"Updated efSearch to {kwargs['efSearch']}")
+    
+    @classmethod
+    def from_documents(
+        cls,
+        documents: List[Any],
+        embedding_function,
+        dimension: int = 768,
+        index_type: str = "Flat",
+        metric: str = "cosine",
+        batch_size: int = 1000,
+        **kwargs
+    ) -> "FAISSVectorStore":
+        """
+        Factory method: Tạo vector store từ documents và embedding function
+        
+        Args:
+            documents: List of Document objects
+            embedding_function: Function để generate embeddings (callable)
+            dimension: Embedding dimension
+            index_type: FAISS index type
+            metric: Distance metric
+            batch_size: Batch size for processing
+            **kwargs: Additional parameters cho FAISSVectorStore
+            
+        Returns:
+            FAISSVectorStore: Vector store đã được populate
+        """
+        # Create vector store
+        vectorstore = cls(
+            dimension=dimension,
+            index_type=index_type,
+            metric=metric,
+            **kwargs
+        )
+        
+        if not documents:
+            logger.warning("No documents provided")
+            return vectorstore
+        
+        # Extract texts
+        texts = []
+        for doc in documents:
+            if hasattr(doc, 'content'):
+                texts.append(doc.content)
+            elif hasattr(doc, 'page_content'):
+                texts.append(doc.page_content)
+            else:
+                texts.append(str(doc))
+        
+        logger.info(f"Generating embeddings for {len(texts)} documents...")
+        
+        # Generate embeddings in batches
+        all_embeddings = []
+        for i in range(0, len(texts), batch_size):
+            batch_texts = texts[i:i+batch_size]
+            batch_embeddings = embedding_function(batch_texts)
+            all_embeddings.extend(batch_embeddings)
+            logger.info(f"Generated embeddings for batch {i//batch_size + 1}/{(len(texts)-1)//batch_size + 1}")
+        
+        # Add to vector store
+        vectorstore.add_documents(documents, all_embeddings, batch_size=batch_size)
+        
+        logger.info(f"Created vector store with {vectorstore.get_count()} vectors")
+        return vectorstore
+    
+    @classmethod
+    def from_texts(
+        cls,
+        texts: List[str],
+        embedding_function,
+        metadatas: Optional[List[Dict]] = None,
+        dimension: int = 768,
+        index_type: str = "Flat",
+        metric: str = "cosine",
+        batch_size: int = 1000,
+        **kwargs
+    ) -> "FAISSVectorStore":
+        """
+        Factory method: Tạo vector store từ texts và embedding function
+        
+        Args:
+            texts: List of texts
+            embedding_function: Function để generate embeddings
+            metadatas: Optional metadata cho mỗi text
+            dimension: Embedding dimension
+            index_type: FAISS index type
+            metric: Distance metric
+            batch_size: Batch size for processing
+            **kwargs: Additional parameters
+            
+        Returns:
+            FAISSVectorStore: Vector store đã được populate
+        """
+        # Create vector store
+        vectorstore = cls(
+            dimension=dimension,
+            index_type=index_type,
+            metric=metric,
+            **kwargs
+        )
+        
+        if not texts:
+            logger.warning("No texts provided")
+            return vectorstore
+        
+        logger.info(f"Generating embeddings for {len(texts)} texts...")
+        
+        # Generate embeddings in batches
+        all_embeddings = []
+        for i in range(0, len(texts), batch_size):
+            batch_texts = texts[i:i+batch_size]
+            batch_embeddings = embedding_function(batch_texts)
+            all_embeddings.extend(batch_embeddings)
+            logger.info(f"Generated embeddings for batch {i//batch_size + 1}/{(len(texts)-1)//batch_size + 1}")
+        
+        # Add to vector store
+        vectorstore.add_texts(
+            texts=texts,
+            embeddings=all_embeddings,
+            metadatas=metadatas,
+            batch_size=batch_size
+        )
+        
+        logger.info(f"Created vector store with {vectorstore.get_count()} vectors")
+        return vectorstore
