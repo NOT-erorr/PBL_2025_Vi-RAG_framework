@@ -2,6 +2,15 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
+import json
+import uuid
+from pathlib import Path
+import logging
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 try:
     from underthesea import sent_tokenize
 except ImportError:
@@ -704,3 +713,5 @@ class HierarchicalTextSplitter:
             documents.append(doc)
         
         return documents
+
+

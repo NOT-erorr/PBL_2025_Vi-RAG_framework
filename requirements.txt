@@ -1,0 +1,26 @@
+# LLM Providers (Native SDKs - No LangChain)
+google-genai>=0.1.0            # New Google Gemini SDK
+torch>=2.0.0                   # PyTorch for tensor operations
+# openai>=1.0.0                # Uncomment for OpenAI
+
+# Embeddings
+sentence-transformers>=2.2.0   # For BGE-M3
+FlagEmbedding>=1.2.0           # For BGE-M3
+
+# Vector Stores
+faiss-cpu>=1.7.4               # For FAISS
+# faiss-gpu                     # Uncomment for GPU support
+
+# Document Processing
+pypdf>=3.17.0                  # PDF loading
+pymupdf>=1.23.0                # Alternative PDF loader
+python-docx>=1.0.0             # Word documents
+openpyxl>=3.1.0                # Excel files
+
+# Configuration
+python-dotenv>=1.0.0           # Environment variables
+pyyaml>=6.0                    # YAML config files
+
+# Utilities
+numpy>=1.24.0
+tqdm>=4.65.0

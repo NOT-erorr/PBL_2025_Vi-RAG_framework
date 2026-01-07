@@ -4,7 +4,7 @@ from pathlib import Path
 import pickle
 import logging
 import json
-from ..core.vectorstore import VectorStore
+from ..retrieval.vectorstore import VectorStore
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -865,7 +865,7 @@ class FAISSVectorStore(VectorStore):
         index_type: str = "HNSW",
         batch_size: int = 1000,
         **kwargs
-    ) -> "FAISSVectorStore":
+    ) -> VectorStore:
         """
         Tạo vector store từ texts và embedding function
         

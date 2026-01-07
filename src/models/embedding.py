@@ -7,7 +7,7 @@ class BaseEmbedding(ABC):
     """Abstract base class cho embedding models"""
     
     @abstractmethod
-    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+    def embed_documents(self, texts: List[str]) -> Union[List[List[float]], Dict]:
         """
         Embed một list các documents
         
@@ -15,12 +15,12 @@ class BaseEmbedding(ABC):
             texts: Danh sách texts cần embed
             
         Returns:
-            List[List[float]]: Danh sách embeddings
+            Union[List[List[float]], Dict]: Danh sách embeddings hoặc dict với multiple embedding types
         """
         pass
     
     @abstractmethod
-    def embed_query(self, text: str) -> List[float]:
+    def embed_query(self, text: str) -> Union[List[float], Dict]:
         """
         Embed một query text
         
