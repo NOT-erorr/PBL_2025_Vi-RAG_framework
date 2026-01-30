@@ -20,59 +20,39 @@ Một framework RAG toàn diện được thiết kế đặc biệt cho tiếng
 ## 📁 Cấu Trúc Project
 
 ```
-d:\PBL-2025\
-├── src/                          # Source code chính
-│   ├── api/                      # API endpoints (future)
-│   ├── config/                   # Configuration management
-│   │   ├── __init__.py
-│   │   └── settings.py          # Environment variables & settings
-│   ├── core/                     # Core data structures
-│   │   ├── __init__.py
-│   │   └── document.py          # DocumentNode class
-│   ├── ingestion/                # Document loading & processing
-│   │   ├── __init__.py
-│   │   ├── loader.py            # PDFLoader, TXTLoader, DOCXLoader
-│   │   └── chunker.py           # HierarchicalChunker
-│   ├── models/                   # AI models integration
-│   │   ├── __init__.py
-│   │   ├── embedding.py         # GeminiEmbeddingModel
-│   │   ├── gemini_llm.py        # GeminiLLMClient
-│   │   └── prompt.py            # PromptBuilder
-│   ├── retrieval/                # Retrieval components
-│   │   ├── __init__.py
-│   │   ├── qdrant.py            # QdrantVectorStore
-│   │   ├── docstore.py          # DocStore protocol
-│   │   ├── parent_child_retriever.py
-│   │   ├── reranker.py          # Reranking logic
-│   │   └── bm25_index.py        # BM25 search
-│   └── secret/                   # Secret management
+Vi-RAG/
+├── src/
+│   └── vi_rag/                  # Main package
 │       ├── __init__.py
-│       └── .env                 # Environment variables (gitignored)
+│       ├── core.py              # Core RAG functionality
+│       ├── utils.py             # Utility functions
+│       └── py.typed             # Type hints marker
 │
-├── testing/                      # Test files & examples
-│   ├── code/
-│   │   └── demo/
-│   │       ├── complete_example.py       # Complete RAG workflow
-│   │       ├── handle_cached_document.py
-│   │       └── example_usage.py
-│   ├── data/                     # Test documents
-│   └── evaluation/
-│       └── test_ragas_evaluation.py
+├── test/                        # Tests
+│   └── test_basic.py
 │
-├── docs/                         # Documentation
-│   ├── SYSTEM_LOGIC.md          # System architecture
-│   ├── EVALUATION.md            # RAGAS evaluation guide
-│   └── ...
-│
-├── .agent/                       # Agent workflows
-│   └── workflows/
-│       └── virag-workflow.md
-│
-├── requirements.txt              # Python dependencies
-├── QUICKSTART.md                # Quick start guide
-├── .env.example                 # Example environment file
-└── README.md                    # This file
+├── pyproject.toml               # Project configuration
+├── README.md                    # This file
+├── LICENSE                      # MIT License
+└── .gitignore
 ```
+
+### Package Installation
+
+```bash
+# Install in development mode
+pip install -e .
+
+# Install with development dependencies
+pip install -e ".[dev]"
+
+# Install with evaluation tools
+pip install -e ".[evaluation]"
+
+# Install all optional dependencies
+pip install -e ".[all]"
+```
+
 
 ## 🚀 Cài Đặt Nhanh
 
@@ -80,7 +60,7 @@ d:\PBL-2025\
 
 ```bash
 git clone https://github.com/NOT-erorr/PBL_2025_Vi-RAG_framework.git
-cd PBL_2025_Vi-RAG_framework
+cd Vi-RAG
 ```
 
 ### 2. Tạo Virtual Environment
@@ -95,26 +75,17 @@ venv\Scripts\activate
 source venv/bin/activate
 ```
 
-### 3. Cài Dependencies
+### 3. Cài Package
 
 ```bash
-pip install -r requirements.txt
-```
+# Basic installation
+pip install -e .
 
-### 4. Cấu Hình Environment
+# With development tools
+pip install -e ".[dev]"
 
-Tạo file `.env` từ `.env.example`:
-
-```bash
-cp .env.example src/secret/.env
-```
-
-Điền API keys vào `src/secret/.env`:
-
-```bash
-GEMINI_API_KEY=your_gemini_api_key_here
-QDRANT_API_KEY=your_qdrant_api_key_here
-QDRANT_URL=https://your-qdrant-instance.cloud.qdrant.io
+# With all dependencies
+pip install -e ".[all]"
 ```
 
 ## 💡 Sử Dụng Cơ Bản
@@ -122,7 +93,7 @@ QDRANT_URL=https://your-qdrant-instance.cloud.qdrant.io
 ### Example 1: Load và Chunk Document Tự Động
 
 ```python
-from src.ingestion import DocumentLoader
+from vi_rag import DocumentLoader
 
 # Auto-chunking (khuyến nghị)
 loader = DocumentLoader(
@@ -144,10 +115,13 @@ print(f"Child chunks: {len(children)}")
 ### Example 2: Workflow Hoàn Chỉnh RAG
 
 ```python
-from src.ingestion import DocumentLoader
-from src.models import GeminiEmbeddingModel, GeminiLLMClient
-from src.retrieval import QdrantVectorStore
-from src.secret import GEMINI_API_KEY, QDRANT_API_KEY, QDRANT_URL
+from vi_rag.ingestion import DocumentLoader
+from vi_rag.models import GeminiEmbeddingModel, GeminiLLMClient
+from vi_rag.retrieval import QdrantVectorStore
+GEMINI_API_KEY = ''
+QDRANT_API_KEY = ''
+QDRANT_URL = ''
+
 import uuid
 
 # 1. Load và chunk document
@@ -191,7 +165,7 @@ print(f"Trả lời: {answer}")
 ### Example 3: Xử Lý Document Cache
 
 ```python
-from src.ingestion import DocumentLoader
+from vi_rag.ingestion import DocumentLoader
 
 loader = DocumentLoader("document.pdf")
 
@@ -208,7 +182,7 @@ else:
 ### Example 4: Xử Lý Nhiều Documents
 
 ```python
-from src.ingestion import DocumentLoader
+from vi_rag.ingestion import DocumentLoader
 import uuid
 
 documents = ["doc1.pdf", "doc2.txt", "doc3.docx"]
@@ -237,7 +211,7 @@ vector_store.add_vectors(vectors, all_children, [c['id'] for c in all_children])
 ### Example 5: Load Document Không Auto-Chunk
 
 ```python
-from src.ingestion import DocumentLoader, HierarchicalChunker
+from vi_rag.ingestion import DocumentLoader, HierarchicalChunker
 
 # Load document only
 loader = DocumentLoader("document.pdf", auto_chunk=False)
@@ -276,8 +250,8 @@ results = vector_store.client.search(
 ### Example 7: Multilingual - Tiếng Việt
 
 ```python
-from src.ingestion import DocumentLoader
-from src.models import GeminiLLMClient
+from vi_rag.ingestion import DocumentLoader
+from vi_rag.models import GeminiLLMClient
 
 # Load Vietnamese document
 loader = DocumentLoader("tai_lieu_tieng_viet.pdf", auto_chunk=True)
@@ -301,7 +275,7 @@ print(f"Trả lời: {answer}")
 ### Example 8: Batch Processing với Retry
 
 ```python
-from src.models import GeminiEmbeddingModel
+from vi_rag.models import GeminiEmbeddingModel
 import time
 
 embedding_model = GeminiEmbeddingModel(GEMINI_API_KEY)

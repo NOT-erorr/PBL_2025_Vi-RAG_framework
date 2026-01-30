@@ -2,16 +2,20 @@
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
+# =========================
+# Project metadata (PyPI)
+# =========================
 [project]
 name = "vi-rag"
-version = "0.1.0"
-description = "Vietnamese Retrieval-Augmented Generation Framework"
+version = "0.1.1"
+description = "Vietnamese Retrieval-Augmented Generation (RAG) Framework"
 readme = "README.md"
 requires-python = ">=3.8"
-license = {text = "MIT"}
+
 authors = [
-    {name = "Vi-RAG Team", email = "virag@example.com"}
+    { name = "Vi-RAG Team", email = "virag@example.com" }
 ]
+
 keywords = [
     "rag",
     "retrieval-augmented-generation",
@@ -21,6 +25,7 @@ keywords = [
     "gemini",
     "qdrant"
 ]
+
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -37,26 +42,28 @@ classifiers = [
 ]
 
 dependencies = [
-    # Core dependencies
+    # Core
     "numpy>=1.21.0,<3.0.0",
     "python-dotenv>=0.19.0",
-    
+
     # Document processing
     "pypdf>=3.0.0",
     "python-docx>=0.8.11",
     "underthesea>=6.0.0",
-    
-    # Vector store
+
+    # Vector DB
     "qdrant-client>=1.7.0",
-    
-    # AI models
-    "google-generativeai>=0.1.0",
+
+    # Gemini / Google AI
     "google-genai>=0.1.0",
-    
-    # Optional text processing
+
+    # Optional NLP
     "sentence-transformers>=2.0.0",
 ]
 
+# =========================
+# Optional dependencies
+# =========================
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
@@ -73,32 +80,41 @@ evaluation = [
 ]
 
 all = [
-    "vi-rag[dev,evaluation]",
+    "vi-rag[dev,evaluation]"
 ]
 
+# =========================
+# Project URLs
+# =========================
 [project.urls]
 Homepage = "https://github.com/NOT-erorr/PBL_2025_Vi-RAG_framework"
 Repository = "https://github.com/NOT-erorr/PBL_2025_Vi-RAG_framework"
 Documentation = "https://github.com/NOT-erorr/PBL_2025_Vi-RAG_framework/blob/main/README.md"
 "Bug Tracker" = "https://github.com/NOT-erorr/PBL_2025_Vi-RAG_framework/issues"
 
+# =========================
+# Setuptools configuration
+# =========================
 [tool.setuptools]
-packages = ["Vi-RAG"]
-package-dir = {"" = "src"}
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.setuptools.package-data]
-"Vi-RAG" = ["py.typed"]
+vi_rag = ["py.typed"]
 
+# =========================
+# Formatting & linting
+# =========================
 [tool.black]
 line-length = 100
-target-version = ['py38', 'py39', 'py310', 'py311']
+target-version = ["py38", "py39", "py310", "py311"]
 include = '\.pyi?$'
 extend-exclude = '''
 /(
-  # directories
   \.eggs
   | \.git
-  | \.hg
   | \.mypy_cache
   | \.tox
   | \.venv
@@ -110,53 +126,41 @@ extend-exclude = '''
 [tool.isort]
 profile = "black"
 line_length = 100
-multi_line_output = 3
-include_trailing_comma = true
-force_grid_wrap = 0
-use_parentheses = true
-ensure_newline_before_comments = true
 
+# =========================
+# Mypy
+# =========================
 [tool.mypy]
 python_version = "3.8"
 warn_return_any = true
 warn_unused_configs = true
-disallow_untyped_defs = false
-disallow_incomplete_defs = false
 check_untyped_defs = true
 no_implicit_optional = true
-warn_redundant_casts = true
-warn_unused_ignores = true
-warn_no_return = true
-follow_imports = "normal"
 ignore_missing_imports = true
 
+# =========================
+# Pytest
+# =========================
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "-ra -q --strict-markers --cov=Vi-RAG --cov-report=term-missing"
-testpaths = [
-    "test",
-    "tests",
-]
+addopts = "-ra -q --strict-markers --cov=vi_rag --cov-report=term-missing"
+testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
 
+# =========================
+# Coverage
+# =========================
 [tool.coverage.run]
-source = ["src"]
+source = ["vi_rag"]
 omit = [
     "*/tests/*",
-    "*/test/*",
     "*/__pycache__/*",
-    "*/site-packages/*",
 ]
 
 [tool.coverage.report]
 exclude_lines = [
     "pragma: no cover",
     "def __repr__",
-    "raise AssertionError",
     "raise NotImplementedError",
     "if __name__ == .__main__.:",
-    "if TYPE_CHECKING:",
-    "@abstractmethod",
 ]

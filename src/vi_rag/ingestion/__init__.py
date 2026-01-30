@@ -1,4 +1,4 @@
-from src import core
+from .. import core
 from .loader import DocumentLoader, PDFLoader, TXTLoader, DOCXLoader
 from .chunker import DocumentNode, HierarchicalChunker, SimpleTextSplitter
 from .splitter import SimpleTextSplitter

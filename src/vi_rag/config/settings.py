@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 import os
 from pathlib import Path
-from src.secret import *
+from vi_rag.secret import *
 
 # ======================================================
 # Load environment

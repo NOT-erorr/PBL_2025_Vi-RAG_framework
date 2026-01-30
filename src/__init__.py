@@ -1,18 +1,10 @@
-"""RAG System - Main Package"""
+"""RAG System - Compatibility Layer
+
+This file exists for backwards compatibility. 
+The actual package is in the vi_rag directory.
+"""
+
+# Re-export from vi_rag for backwards compatibility
+from vi_rag import *
 
 __version__ = "0.1.0"
-
-# Import các module con để dễ dàng truy cập
-from src import core
-# from src import models
-from src import ingestion
-# from src import retrieval
-# from src import plugin
-
-__all__ = [
-    "core",
-    "models",
-    "ingestion",
-    "retrieval",
-    "plugin",
-]
