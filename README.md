@@ -27,32 +27,11 @@ Vi-RAG/
 │       ├── core.py              # Core RAG functionality
 │       ├── utils.py             # Utility functions
 │       └── py.typed             # Type hints marker
-│
-├── test/                        # Tests
-│   └── test_basic.py
-│
-├── pyproject.toml               # Project configuration
-├── README.md                    # This file
-├── LICENSE                      # MIT License
-└── .gitignore
+pyproject.toml               # Project configuration
+README.md                    # This file
+LICENSE                      # MIT License
+.gitignore
 ```
-
-### Package Installation
-
-```bash
-# Install in development mode
-pip install -e .
-
-# Install with development dependencies
-pip install -e ".[dev]"
-
-# Install with evaluation tools
-pip install -e ".[evaluation]"
-
-# Install all optional dependencies
-pip install -e ".[all]"
-```
-
 
 ## 🚀 Cài Đặt Nhanh
 
@@ -75,18 +54,33 @@ venv\Scripts\activate
 source venv/bin/activate
 ```
 
-### 3. Cài Package
+### 3. Cấu Hình Environment Variables
 
 ```bash
-# Basic installation
-pip install -e .
+# Copy file .env.example thành .env
+cp .env.example .env
 
-# With development tools
-pip install -e ".[dev]"
-
-# With all dependencies
-pip install -e ".[all]"
+# Hoặc trên Windows
+copy .env.example .env
 ```
+
+Sau đó, mở file `.env` và điền các API keys của bạn:
+
+```bash
+# Required: Google Gemini API Key
+GEMINI_API_KEY=your_gemini_api_key_here
+
+# Required: Qdrant Vector Database Configuration  
+QDRANT_API_KEY=your_qdrant_api_key_here
+QDRANT_URL=your_qdrant_url_here
+```
+
+> **Lưu ý**: File `.env` chứa thông tin nhạy cảm và đã được thêm vào `.gitignore`. Không commit file này lên Git!
+
+**Hướng dẫn lấy API keys:**
+- **Gemini API Key**: [Google AI Studio](https://makersuite.google.com/app/apikey)
+- **Qdrant**: [Qdrant Cloud](https://cloud.qdrant.io)
+
 
 ## 💡 Sử Dụng Cơ Bản
 
@@ -118,26 +112,29 @@ print(f"Child chunks: {len(children)}")
 from vi_rag.ingestion import DocumentLoader
 from vi_rag.models import GeminiEmbeddingModel, GeminiLLMClient
 from vi_rag.retrieval import QdrantVectorStore
-GEMINI_API_KEY = ''
-QDRANT_API_KEY = ''
-QDRANT_URL = ''
-
+from vi_rag.config import settings
 import uuid
 
 # 1. Load và chunk document
 loader = DocumentLoader("document.pdf", auto_chunk=True)
 document, parents, children = loader.load_and_chunk()
 
-# 2. Setup models
-embedding_model = GeminiEmbeddingModel(GEMINI_API_KEY, output_dimensionality=768)
-llm = GeminiLLMClient(GEMINI_API_KEY, model_name="gemini-2.0-flash-exp")
+# 2. Setup models (sử dụng settings từ .env)
+embedding_model = GeminiEmbeddingModel(
+    settings.GEMINI_API_KEY, 
+    output_dimensionality=settings.EMBEDDING_DIM
+)
+llm = GeminiLLMClient(settings.GEMINI_API_KEY, model_name="gemini-2.0-flash-exp")
 
 # 3. Generate embeddings
 child_texts = [child['text'] for child in children]
 vectors = embedding_model.embed_documents(child_texts)
 
 # 4. Setup và index vào vector store
-vector_store = QdrantVectorStore(api_key=QDRANT_API_KEY, url=QDRANT_URL)
+vector_store = QdrantVectorStore(
+    api_key=settings.QDRANT_API_KEY, 
+    url=settings.QDRANT_URL
+)
 vector_store.connect()
 vector_store.ensure_collection()
 
@@ -154,7 +151,7 @@ vector_store.add_vectors(
 # 5. Query và generate answer
 question = "Tài liệu này nói về gì?"
 query_vector = embedding_model.embed_query(question)
-results = vector_store.search(query_vector, top_k=5)
+results = vector_store.search(query_vector, top_k=settings.VECTOR_TOP_K)
 context = "\n\n".join([r['text'] for r in results])
 
 answer = llm.generate(query=question, context=context)
@@ -252,6 +249,7 @@ results = vector_store.client.search(
 ```python
 from vi_rag.ingestion import DocumentLoader
 from vi_rag.models import GeminiLLMClient
+from vi_rag.config import settings
 
 # Load Vietnamese document
 loader = DocumentLoader("tai_lieu_tieng_viet.pdf", auto_chunk=True)
@@ -259,11 +257,11 @@ document, parents, children = loader.load_and_chunk()
 
 # Query bằng tiếng Việt
 question = "Nội dung chính của tài liệu là gì?"
-results = vector_store.search(query_vector, top_k=5)
+results = vector_store.search(query_vector, top_k=settings.VECTOR_TOP_K)
 context = "\n\n".join([r['text'] for r in results])
 
 # Generate với instruction tiếng Việt
-llm = GeminiLLMClient(GEMINI_API_KEY)
+llm = GeminiLLMClient(settings.GEMINI_API_KEY)
 answer = llm.generate(
     query=question,
     context=context
@@ -276,9 +274,10 @@ print(f"Trả lời: {answer}")
 
 ```python
 from vi_rag.models import GeminiEmbeddingModel
+from vi_rag.config import settings
 import time
 
-embedding_model = GeminiEmbeddingModel(GEMINI_API_KEY)
+embedding_model = GeminiEmbeddingModel(settings.GEMINI_API_KEY)
 
 def embed_with_retry(texts, max_retries=3):
     """Embed với retry logic"""
@@ -306,26 +305,29 @@ for i in range(0, len(child_texts), batch_size):
 
 ## 📖 Ví Dụ Hoàn Chỉnh
 
-Xem `testing/code/demo/complete_example.py` để có ví dụ đầy đủ về workflow:
+Thư mục `examples/` chứa các ví dụ đầy đủ về cách sử dụng Vi-RAG:
 
+### Quick Start
 ```bash
-python -m testing.code.demo.complete_example
+python examples/quick_start.py
 ```
+
+### Complete Workflow
+```bash
+python examples/complete_example.py
+```
+
+### Advanced Examples
+```bash
+python examples/advanced_examples.py
+```
+
+Xem chi tiết tại [examples/README.md](examples/README.md)
 
 ## 🏗️ Kiến Trúc Hệ Thống
 
 ```mermaid
-graph TD
-    A[Documents] -->|Load| B[DocumentLoader]
-    B -->|Chunk| C[HierarchicalChunker]
-    C -->|Parent/Child Chunks| D[Embedding Model]
-    D -->|Vectors| E[QdrantVectorStore]
-    F[User Query] -->|Embed| D
-    D -->|Query Vector| E
-    E -->|Search| G[Retrieved Contexts]
-    G -->|Context| H[LLM Client]
-    F -->|Query| H
-    H -->|Answer| I[User]
+
 ```
 
 ## 📊 Key Components
@@ -411,13 +413,9 @@ DocumentLoader(
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
 ## 📧 Contact
 
-- **Author**: Vi-RAG Team
+- **Author**: Quoc Long
 - **GitHub**: [NOT-erorr/PBL_2025_Vi-RAG_framework](https://github.com/NOT-erorr/PBL_2025_Vi-RAG_framework)
 
 ## 🙏 Acknowledgments

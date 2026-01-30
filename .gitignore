@@ -1,5 +1,8 @@
-dist/
+lsdist/
 src/vi_rag/secret/.env 
 src/vi_rag.egg-info/
 vi_rag-0.1.0/  
 pyproject.toml
+.env
+.env.example
+loaded_documents_cache.json
